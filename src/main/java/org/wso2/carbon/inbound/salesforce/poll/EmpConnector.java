@@ -54,6 +54,7 @@ public class EmpConnector {
          */
         @Override
         public void cancel() {
+            LOG.debug("Unsubscribed from topic  : " + topic);
             replay.remove(topic);
             if (running.get() && client != null) {
                 client.getChannel(topic).unsubscribe();
@@ -91,11 +92,13 @@ public class EmpConnector {
             channel.subscribe((c, message) -> consumer.accept(message.getDataAsMap()), (c, message) -> {
                 if (message.isSuccessful()) {
                     future.complete(this);
+                    LOG.debug("[LOG_PATCH] Successfully subscribed to the channel " + c);
                 } else {
                     Object error = message.get(ERROR);
                     if (error == null) {
                         error = message.get(FAILURE);
                     }
+                    LOG.debug("[LOG_PATCH] Failed to subscribe to the channel " + c);
                     future.completeExceptionally(new CannotSubscribe(parameters.endpoint(), topic, replayFrom,
                             error != null ? error : message));
                 }
@@ -263,7 +266,9 @@ public class EmpConnector {
         client.addExtension(new ReplayExtension(replay));
         addListeners(client);
         client.handshake((c, m) -> {
+            LOG.debug("[LOG_PATCH] initiating handshake " + m);
             if (!m.isSuccessful()) {
+                LOG.debug("[LOG_PATCH] Handshake unsuccessful " + m);
                 Object error = m.get(ERROR);
                 if (error == null) {
                     error = m.get(FAILURE);
@@ -272,6 +277,7 @@ public class EmpConnector {
                         new ConnectException(String.format("Cannot connect [%s] : %s", parameters.endpoint(), error)));
                 running.set(false);
             } else {
+                LOG.debug("[LOG_PATCH] Handshake unsuccessful " + m);
                 subscriptions.forEach(SubscriptionImpl::subscribe);
                 future.complete(true);
             }
@@ -297,6 +303,7 @@ public class EmpConnector {
     }
 
     private void reconnect() {
+        LOG.debug("[LOG_PATCH] reconnect called on " + httpClient);
         stop();
         if (running.compareAndSet(false, true)) {
             connect();
@@ -318,7 +325,10 @@ public class EmpConnector {
         public void onMessage(ClientSessionChannel channel, Message message) {
 
             if (!message.isSuccessful()) {
+                LOG.debug("[LOG_PATCH] AuthFailure listener on message hit " + message + " with error code "
+                        + message.get(Message.ERROR_FIELD));
                 if (isError(message, ERROR_401) || isError(message, ERROR_403)) {
+                    LOG.debug("[LOG_PATCH] Error message + " + message);
                     reauthenticate.set(true);
                     reconnect();
                 }
